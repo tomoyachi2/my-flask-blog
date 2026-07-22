@@ -1,0 +1,10 @@
+# Pythonのキャッシュ
+__pycache__/
+*.py[cod]
+
+# 仮想環境（venv）
+venv/
+.venv/
+
+# 環境変数ファイルなど
+.env
