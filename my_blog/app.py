@@ -57,7 +57,7 @@ def detail(id):
     post = Post.query.get_or_404(id)
     return render_template('detail.html', post=post)
 
-# 4. YouTubeダウンローダー機能（Cookie対応版）
+# 4. YouTubeダウンローダー機能（フォーマットエラー対策版）
 @app.route('/youtube', methods=['GET', 'POST'])
 def youtube():
     if request.method == 'POST':
@@ -79,7 +79,7 @@ def youtube():
             cookie_path = os.path.join(temp_dir, 'cookies.txt')
             cookie_file.save(cookie_path)
 
-        # yt-dlpのオプション設定
+        # yt-dlpの基本設定
         ydl_opts = {
             'outtmpl': output_template,
             'quiet': True,
@@ -89,13 +89,14 @@ def youtube():
         if cookie_path:
             ydl_opts['cookiefile'] = cookie_path
 
+        # エラーが出にくい柔軟なフォーマット指定に変更
         if format_type == 'm4a':
             ydl_opts.update({
-                'format': 'bestaudio[ext=m4a]/bestaudio',
+                'format': 'ba/b', # 最高の音声（bestaudio）、なければ全体の一番良いやつ
             })
         elif format_type == 'mp3':
             ydl_opts.update({
-                'format': 'bestaudio/best',
+                'format': 'ba/b',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -104,11 +105,11 @@ def youtube():
             })
         elif format_type == 'mp4_hd':
             ydl_opts.update({
-                'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best',
+                'format': 'bv*[height<=1080]+ba/b[height<=1080]/b', # 1080p以下の動画+音声、無理なら単体で最高のもの
             })
         else: # mp4_best
             ydl_opts.update({
-                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+                'format': 'bv*+ba/b', # 最高画質動画+最高音声、無理なら単体で最高のもの
             })
 
         try:
@@ -116,7 +117,7 @@ def youtube():
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
                 
-                # mp3変換時のファイル名追従
+                # mp3変換時の拡張子補正
                 if format_type == 'mp3':
                     filename = os.path.splitext(filename)[0] + '.mp3'
 
