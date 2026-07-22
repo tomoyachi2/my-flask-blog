@@ -3,9 +3,12 @@ import tempfile
 from flask import Flask, render_template, request, redirect, url_for, send_file, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import yt_dlp
+
+# static-ffmpeg のパスを通す
 import static_ffmpeg
-static_ffmpeg.add_paths() # これでシステムにffmpegが認識される！
+static_ffmpeg.add_paths()
+
+import yt_dlp
 
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
@@ -19,47 +22,40 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# ===== データベースのモデル定義（ブログ記事データ） =====
+# ===== データベースのモデル定義 =====
 class Post(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(100), nullable=False) # 記事タイトル
-    content = db.Column(db.Text, nullable=False)       # 記事本文
-    created_at = db.Column(db.DateTime, default=datetime.utcnow) # 投稿日時
+    title = db.Column(db.String(100), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# データベースの初期化
 with app.app_context():
     db.create_all()
 
-# ===== ルーティング（ページごとの処理） =====
+# ===== ルーティング =====
 
-# 1. 記事一覧画面（トップページ）
 @app.route('/')
 def index():
     posts = Post.query.order_by(Post.created_at.desc()).all()
     return render_template('index.html', posts=posts)
 
-# 2. 記事新規投稿処理
 @app.route('/create', methods=['GET', 'POST'])
 def create():
     if request.method == 'POST':
         title = request.form['title']
         content = request.form['content']
-        
-        # 新しい記事を作成してDBに保存
         new_post = Post(title=title, content=content)
         db.session.add(new_post)
         db.session.commit()
-        
         return redirect(url_for('index'))
     return render_template('create.html')
 
-# 3. 記事詳細画面
 @app.route('/post/<int:id>')
 def detail(id):
     post = Post.query.get_or_404(id)
     return render_template('detail.html', post=post)
 
-# 4. YouTubeダウンローダー機能（フォーマットエラー対策版）
+# 4. YouTubeダウンローダー機能
 @app.route('/youtube', methods=['GET', 'POST'])
 def youtube():
     if request.method == 'POST':
@@ -71,7 +67,6 @@ def youtube():
             flash('URLを入力してください', 'error')
             return redirect(url_for('youtube'))
 
-        # 一時保存フォルダを作成
         temp_dir = tempfile.mkdtemp()
         output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
 
@@ -81,24 +76,29 @@ def youtube():
             cookie_path = os.path.join(temp_dir, 'cookies.txt')
             cookie_file.save(cookie_path)
 
-        # yt-dlpの基本設定
+        # yt-dlp設定（エラーの出にくい汎用フォーマット指定）
         ydl_opts = {
             'outtmpl': output_template,
             'quiet': True,
             'no_warnings': True,
+            'nocheckcertificate': True,
         }
 
         if cookie_path:
             ydl_opts['cookiefile'] = cookie_path
 
-        # エラーが出にくい柔軟なフォーマット指定に変更
+        # フォーマット設定の最適化
         if format_type == 'm4a':
             ydl_opts.update({
-                'format': 'ba/b', # 最高の音声（bestaudio）、なければ全体の一番良いやつ
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'm4a',
+                }],
             })
         elif format_type == 'mp3':
             ydl_opts.update({
-                'format': 'ba/b',
+                'format': 'bestaudio/best',
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
@@ -107,11 +107,13 @@ def youtube():
             })
         elif format_type == 'mp4_hd':
             ydl_opts.update({
-                'format': 'bv*[height<=1080]+ba/b[height<=1080]/b', # 1080p以下の動画+音声、無理なら単体で最高のもの
+                'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+                'merge_output_format': 'mp4',
             })
         else: # mp4_best
             ydl_opts.update({
-                'format': 'bv*+ba/b', # 最高画質動画+最高音声、無理なら単体で最高のもの
+                'format': 'bestvideo+bestaudio/best',
+                'merge_output_format': 'mp4',
             })
 
         try:
@@ -119,9 +121,17 @@ def youtube():
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
                 
-                # mp3変換時の拡張子補正
-                if format_type == 'mp3':
-                    filename = os.path.splitext(filename)[0] + '.mp3'
+                # 拡張子が変換処理で変わる場合のケア
+                base_path = os.path.splitext(filename)[0]
+                if format_type == 'm4a' and not filename.endswith('.m4a'):
+                    if os.path.exists(base_path + '.m4a'):
+                        filename = base_path + '.m4a'
+                elif format_type == 'mp3' and not filename.endswith('.mp3'):
+                    if os.path.exists(base_path + '.mp3'):
+                        filename = base_path + '.mp3'
+                elif 'mp4' in format_type and not filename.endswith('.mp4'):
+                    if os.path.exists(base_path + '.mp4'):
+                        filename = base_path + '.mp4'
 
             return send_file(filename, as_attachment=True)
 
