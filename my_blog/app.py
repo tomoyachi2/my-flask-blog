@@ -57,27 +57,37 @@ def detail(id):
     post = Post.query.get_or_404(id)
     return render_template('detail.html', post=post)
 
-# 4. YouTubeダウンローダー機能
+# 4. YouTubeダウンローダー機能（Cookie対応版）
 @app.route('/youtube', methods=['GET', 'POST'])
 def youtube():
     if request.method == 'POST':
         url = request.form.get('url', '').strip()
         format_type = request.form.get('format', 'm4a')
+        cookie_file = request.files.get('cookie_file')
 
         if not url:
             flash('URLを入力してください', 'error')
             return redirect(url_for('youtube'))
 
-        # 一時保存フォルダを作成してダウンロード処理を行う
+        # 一時保存フォルダを作成
         temp_dir = tempfile.mkdtemp()
         output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
 
-        # フォーマット設定
+        # Cookieファイルの処理
+        cookie_path = None
+        if cookie_file and cookie_file.filename != '':
+            cookie_path = os.path.join(temp_dir, 'cookies.txt')
+            cookie_file.save(cookie_path)
+
+        # yt-dlpのオプション設定
         ydl_opts = {
             'outtmpl': output_template,
             'quiet': True,
             'no_warnings': True,
         }
+
+        if cookie_path:
+            ydl_opts['cookiefile'] = cookie_path
 
         if format_type == 'm4a':
             ydl_opts.update({
@@ -106,11 +116,10 @@ def youtube():
                 info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info)
                 
-                # mp3変換等の拡張子変更対応
+                # mp3変換時のファイル名追従
                 if format_type == 'mp3':
                     filename = os.path.splitext(filename)[0] + '.mp3'
 
-            # ダウンロードしたファイルをブラウザに送信
             return send_file(filename, as_attachment=True)
 
         except Exception as e:
