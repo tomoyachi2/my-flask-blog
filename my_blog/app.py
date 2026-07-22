@@ -4,6 +4,8 @@ from flask import Flask, render_template, request, redirect, url_for, send_file,
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import yt_dlp
+import static_ffmpeg
+static_ffmpeg.add_paths() # これでシステムにffmpegが認識される！
 
 app = Flask(__name__)
 app.secret_key = 'super-secret-key'
