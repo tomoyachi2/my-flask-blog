@@ -1,9 +1,12 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for
+import tempfile
+from flask import Flask, render_template, request, redirect, url_for, send_file, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import yt_dlp
 
 app = Flask(__name__)
+app.secret_key = 'super-secret-key'
 
 # Render環境（DATABASE_URL環境変数がある場合）ならPostgreSQL、ローカルならSQLiteを使用
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///blog.db')
@@ -53,6 +56,68 @@ def create():
 def detail(id):
     post = Post.query.get_or_404(id)
     return render_template('detail.html', post=post)
+
+# 4. YouTubeダウンローダー機能
+@app.route('/youtube', methods=['GET', 'POST'])
+def youtube():
+    if request.method == 'POST':
+        url = request.form.get('url', '').strip()
+        format_type = request.form.get('format', 'm4a')
+
+        if not url:
+            flash('URLを入力してください', 'error')
+            return redirect(url_for('youtube'))
+
+        # 一時保存フォルダを作成してダウンロード処理を行う
+        temp_dir = tempfile.mkdtemp()
+        output_template = os.path.join(temp_dir, '%(title)s.%(ext)s')
+
+        # フォーマット設定
+        ydl_opts = {
+            'outtmpl': output_template,
+            'quiet': True,
+            'no_warnings': True,
+        }
+
+        if format_type == 'm4a':
+            ydl_opts.update({
+                'format': 'bestaudio[ext=m4a]/bestaudio',
+            })
+        elif format_type == 'mp3':
+            ydl_opts.update({
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+            })
+        elif format_type == 'mp4_hd':
+            ydl_opts.update({
+                'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best',
+            })
+        else: # mp4_best
+            ydl_opts.update({
+                'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best',
+            })
+
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                filename = ydl.prepare_filename(info)
+                
+                # mp3変換等の拡張子変更対応
+                if format_type == 'mp3':
+                    filename = os.path.splitext(filename)[0] + '.mp3'
+
+            # ダウンロードしたファイルをブラウザに送信
+            return send_file(filename, as_attachment=True)
+
+        except Exception as e:
+            flash(f'ダウンロードエラー: {str(e)}', 'error')
+            return redirect(url_for('youtube'))
+
+    return render_template('youtube.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
