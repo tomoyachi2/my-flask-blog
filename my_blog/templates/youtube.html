@@ -8,12 +8,9 @@
 </head>
 <body>
     <header>
-    <h1><a href="{{ url_for('index') }}">🚀 My WordPress Blog</a></h1>
-    <div>
-        <a href="{{ url_for('youtube') }}" class="btn" style="background-color: #d9381e; margin-right: 5px;">🎵 YT Downloader</a>
-        <a href="{{ url_for('create') }}" class="btn">＋ 新規投稿</a>
-    </div>
-</header>
+        <h1><a href="{{ url_for('index') }}">🚀 My WordPress Blog</a></h1>
+        <a href="{{ url_for('index') }}" class="btn" style="background-color: #50575e;">一覧に戻る</a>
+    </header>
 
     <div class="container" style="grid-template-columns: 1fr;">
         <main class="form-card">
@@ -29,7 +26,13 @@
               {% endif %}
             {% endwith %}
 
-            <form method="POST" action="{{ url_for('youtube') }}">
+            <form method="POST" action="{{ url_for('youtube') }}" enctype="multipart/form-data">
+                <!-- Cookieファイル選択 -->
+                <div class="form-group">
+                    <label for="cookie_file">Cookieファイル (.txt) <span style="font-size: 0.8em; color: #666; font-weight: normal;">※ 任意。YouTube Music等で必要な場合添付</span></label>
+                    <input type="file" id="cookie_file" name="cookie_file" accept=".txt">
+                </div>
+
                 <!-- URL入力 -->
                 <div class="form-group">
                     <label for="url">YouTube URL</label>
